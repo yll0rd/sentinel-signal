@@ -1,0 +1,3 @@
+telethon>=1.36
+requests>=2.31
+flask>=3.0

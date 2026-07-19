@@ -1,0 +1,133 @@
+"""
+Sentinel Signal
+----------------
+Listens to a Telegram channel for new messages and sends a free push
+notification via ntfy.sh whenever a message contains one of your keywords.
+
+Setup:
+1. pip install telethon requests
+2. Get API credentials from https://my.telegram.org (API Development Tools)
+3. Fill in the CONFIG section below
+4. Run: python sentinel_signal.py
+   (first run will ask you to log in with your phone number - this creates
+   a local session file so you won't need to log in again)
+
+Notifications:
+- Install the ntfy app (iOS/Android) or use https://ntfy.sh in a browser
+- Subscribe to the same TOPIC you set below
+- That's it - no account or API key needed
+"""
+
+import os
+import threading
+from datetime import datetime
+
+import requests
+from flask import Flask
+from dotenv import load_dotenv
+from telethon import TelegramClient, events
+from telethon.sessions import StringSession
+
+load_dotenv()
+
+# ============ CONFIG (from environment) ============
+API_ID = int(os.environ["TELEGRAM_API_ID"])   # from https://my.telegram.org
+API_HASH = os.environ["TELEGRAM_API_HASH"]    # from https://my.telegram.org
+SESSION_STRING = os.environ.get("SESSION_STRING", "")  # from generate_session.py
+CHANNEL = int(os.environ["CHANNEL_ID"])      # e.g. 'somechannel' (no @) or the channel's numeric ID
+
+KEYWORDS = [kw.strip() for kw in os.environ["KEYWORDS"].split(",") if kw.strip()]
+AVOID_KEYWORDS = [kw.strip() for kw in os.environ.get("AVOID_KEYWORDS", "").split(",") if kw.strip()]
+
+NTFY_TOPIC = os.environ["NTFY_TOPIC"]   # pick something unique/hard to guess
+NTFY_URL = f"https://ntfy.sh/{NTFY_TOPIC}"
+# =====================================================
+
+client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
+
+
+# === Tiny keep-alive web server ===
+app = Flask(__name__)
+
+@app.route("/")
+def health():
+    return "Sentinel Signal is running.", 200
+
+def run_web_server():
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host="0.0.0.0", port=port)
+
+# ==================================
+
+def send_notification(title: str, message: str, priority: str = "default"):
+    """Send a push notification via ntfy.sh"""
+    try:
+        requests.post(
+            NTFY_URL,
+            data=message.encode("utf-8"),
+            headers={
+                "Title": title,
+                "Priority": priority,   # min, low, default, high, urgent
+                "Tags": "loudspeaker",
+            },
+            timeout=10,
+        )
+    except requests.RequestException as e:
+        print(f"[!] Failed to send ntfy notification: {e}")
+
+
+async def handler(event):
+    text = event.raw_text or ""
+    received_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    print(f"[DEBUG] {received_at} New message: {text[:50]}{'...' if len(text) > 50 else ''} ")
+    lowered = text.lower()
+
+    matched = [kw for kw in KEYWORDS if kw.lower() in lowered]
+    if not matched:
+        return
+
+    avoided = [kw for kw in AVOID_KEYWORDS if kw.lower() in lowered]
+    if avoided:
+        return
+
+    preview = text[:200] + ("..." if len(text) > 200 else "")
+    print(f"[MATCH] {matched} -> {preview}")
+
+    send_notification(
+        title=f"Keyword match: {', '.join(matched)}",
+        message=preview,
+        priority="high",
+    )
+
+
+async def main():
+    print("Sentinel Signal starting...")
+    
+    # Start the web server in a separate thread
+    threading.Thread(target=run_web_server, daemon=True).start()
+ 
+    async with client:
+        # async for dialog in client.iter_dialogs():
+        #     kind = "channel" if dialog.is_channel else ("group" if dialog.is_group else "user")
+        #     print(f"{dialog.id}\t[{kind}]\t{dialog.name}")
+            
+        # Force-resolve and cache the entity before listening.
+        # This is required even with a correct numeric ID - Telethon needs
+        # to "meet" the entity once per session before it can match
+        # incoming updates against it, otherwise you'll see repeated
+        # "Cannot find any entity corresponding to ..." errors at runtime.
+        entity = await client.get_entity(CHANNEL)
+        # print(f"Resolved channel: {entity.title} (id={entity.id})")
+ 
+        client.add_event_handler(handler, events.NewMessage(chats=entity))
+ 
+        print(f"Keywords: {KEYWORDS}")
+        print(f"Notifications -> {NTFY_URL}")
+        print("Listening...")
+ 
+        await client.run_until_disconnected()
+
+
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(main())
