@@ -76,17 +76,37 @@ def send_notification(title: str, message: str, priority: str = "default"):
         print(f"[!] Failed to send ntfy notification: {e}")
 
 
+def keyword_matches(keyword: str, lowered_text: str) -> bool:
+    """
+    A keyword of the form "a&b" matches when "a" and "b" both appear in the
+    text with "a" occurring before "b" (not necessarily adjacent). Plain
+    keywords fall back to a simple substring check.
+    """
+    if "&" in keyword:
+        parts = [p.strip().lower() for p in keyword.split("&") if p.strip()]
+        if not parts:
+            return False
+        pos = 0
+        for part in parts:
+            idx = lowered_text.find(part, pos)
+            if idx == -1:
+                return False
+            pos = idx + len(part)
+        return True
+    return keyword.lower() in lowered_text
+
+
 async def handler(event):
     text = event.raw_text or ""
     received_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"[DEBUG] {received_at} New message: {text[:50]}{'...' if len(text) > 50 else ''} ")
     lowered = text.lower()
 
-    matched = [kw for kw in KEYWORDS if kw.lower() in lowered]
+    matched = [kw for kw in KEYWORDS if keyword_matches(kw, lowered)]
     if not matched:
         return
 
-    avoided = [kw for kw in AVOID_KEYWORDS if kw.lower() in lowered]
+    avoided = [kw for kw in AVOID_KEYWORDS if keyword_matches(kw, lowered)]
     if avoided:
         return
 
