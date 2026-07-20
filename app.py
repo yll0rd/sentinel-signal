@@ -19,6 +19,7 @@ Notifications:
 """
 
 import os
+import re
 import threading
 from datetime import datetime
 
@@ -76,11 +77,15 @@ def send_notification(title: str, message: str, priority: str = "default"):
         print(f"[!] Failed to send ntfy notification: {e}")
 
 
+def _word_pattern(word: str) -> "re.Pattern":
+    return re.compile(r"\b" + re.escape(word) + r"\b")
+
+
 def keyword_matches(keyword: str, lowered_text: str) -> bool:
     """
     A keyword of the form "a&b" matches when "a" and "b" both appear in the
-    text with "a" occurring before "b" (not necessarily adjacent). Plain
-    keywords fall back to a simple substring check.
+    text as whole words, with "a" occurring before "b" (not necessarily
+    adjacent). Plain keywords match as a single whole word/phrase.
     """
     if "&" in keyword:
         parts = [p.strip().lower() for p in keyword.split("&") if p.strip()]
@@ -88,12 +93,12 @@ def keyword_matches(keyword: str, lowered_text: str) -> bool:
             return False
         pos = 0
         for part in parts:
-            idx = lowered_text.find(part, pos)
-            if idx == -1:
+            match = _word_pattern(part).search(lowered_text, pos)
+            if not match:
                 return False
-            pos = idx + len(part)
+            pos = match.end()
         return True
-    return keyword.lower() in lowered_text
+    return _word_pattern(keyword.lower()).search(lowered_text) is not None
 
 
 async def handler(event):

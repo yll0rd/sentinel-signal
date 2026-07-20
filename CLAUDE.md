@@ -44,7 +44,9 @@ There are no automated tests, lint config, or CI in this repo.
   even with a correct numeric channel ID, Telethon needs to "meet" an entity once per session
   before incoming updates will match against it, otherwise you get repeated "Cannot find any
   entity corresponding to ..." errors at runtime. Don't remove this call.
-- Keyword matching (`handler` in app.py) is a simple case-insensitive substring check, not regex
-  or word-boundary matching — `KEYWORDS` and `AVOID_KEYWORDS` should be chosen with that in mind.
+- Keyword matching (`keyword_matches` in app.py) is case-insensitive and whole-word (`\b`-bounded
+  regex), not a raw substring check — `"art"` matches `"modern art"` but not `"start"`. A keyword
+  written as `a&b` matches when `a` and `b` both appear as whole words with `a` occurring before
+  `b` (not necessarily adjacent). This applies to both `KEYWORDS` and `AVOID_KEYWORDS`.
 - Session state persists locally as `*.session` / `*.session-journal` files (SQLite) when not
   using `SESSION_STRING`; these and `.env` are gitignored since both are credential-equivalent.
