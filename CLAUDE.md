@@ -46,7 +46,8 @@ There are no automated tests, lint config, or CI in this repo.
   entity corresponding to ..." errors at runtime. Don't remove this call.
 - Keyword matching (`keyword_matches` in app.py) is case-insensitive and whole-word (`\b`-bounded
   regex), not a raw substring check — `"art"` matches `"modern art"` but not `"start"`. A keyword
-  written as `a&b` matches when `a` and `b` both appear as whole words with `a` occurring before
-  `b` (not necessarily adjacent). This applies to both `KEYWORDS` and `AVOID_KEYWORDS`.
+  written as `a+b` matches when `a` and `b` both appear as whole words with `a` occurring before
+  `b` (not necessarily adjacent); `a&b` matches when both appear as whole words in any order.
+  This applies to both `KEYWORDS` and `AVOID_KEYWORDS`.
 - Session state persists locally as `*.session` / `*.session-journal` files (SQLite) when not
   using `SESSION_STRING`; these and `.env` are gitignored since both are credential-equivalent.

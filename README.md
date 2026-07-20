@@ -12,8 +12,9 @@ real time via Telethon's event system.
 1. A Telethon client logs into your Telegram account (using a saved session, so you only log in
    once) and subscribes to `NewMessage` events on a specific channel.
 2. Every incoming message is checked, case-insensitively, for whole-word matches against your
-   `KEYWORDS` list. A keyword can also be written as `a&b`, which matches when both `a` and `b`
-   appear in the message as whole words, with `a` occurring before `b` (not necessarily adjacent).
+   `KEYWORDS` list. A keyword can also be written as `a+b`, which matches when both `a` and `b`
+   appear in the message as whole words with `a` occurring before `b` (not necessarily adjacent),
+   or as `a&b`, which matches when both appear as whole words in any order.
 3. If a message matches a keyword and does **not** match anything in `AVOID_KEYWORDS`, a push
    notification is fired off to a topic on ntfy.sh.
 4. A minimal Flask server runs alongside the listener purely so that hosting platforms (e.g.
@@ -69,7 +70,7 @@ real time via Telethon's event system.
    | `TELEGRAM_API_ID`   | From my.telegram.org (API Development Tools)                                 |
    | `TELEGRAM_API_HASH` | From my.telegram.org                                                         |
    | `CHANNEL_ID`        | Numeric ID of the channel to watch                                           |
-   | `KEYWORDS`          | Comma-separated, case-insensitive whole-word/phrase matches; use `a&b` to require `a` then `b` in sequence |
+   | `KEYWORDS`          | Comma-separated, case-insensitive whole-word/phrase matches; use `a+b` for `a` then `b` in sequence, or `a&b` for both in any order |
    | `AVOID_KEYWORDS`    | Comma-separated, case-insensitive substrings that suppress a match if present (optional) |
    | `NTFY_TOPIC`        | Pick something unique/hard to guess — anyone who knows it can read your notifications |
    | `SESSION_STRING`    | Filled in after step 4 below                                                 |
@@ -111,9 +112,12 @@ The app is designed to run as a long-lived background worker (e.g. on [Render](h
 
 - Keyword matching is case-insensitive and whole-word (using `\b` regex boundaries), not a raw
   substring check — `"art"` will match `"modern art"` but not `"start"`.
-- A keyword containing `&`, e.g. `"restock&ps5"`, matches only if all parts appear as whole words
+- A keyword containing `+`, e.g. `"restock+ps5"`, matches only if all parts appear as whole words
   in the message in that order — `"restock"` must occur before `"ps5"` somewhere later in the
-  text. This applies to both `KEYWORDS` and `AVOID_KEYWORDS`.
+  text.
+- A keyword containing `&`, e.g. `"restock&ps5"`, matches if all parts appear as whole words
+  anywhere in the message, regardless of order.
+- Both apply to `KEYWORDS` and `AVOID_KEYWORDS`.
 - The app force-resolves the channel entity with `client.get_entity()` before listening. This is
   required by Telethon even when you already have the correct numeric channel ID — without it,
   incoming updates won't match and you'll see repeated "Cannot find any entity corresponding to

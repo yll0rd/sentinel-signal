@@ -83,12 +83,14 @@ def _word_pattern(word: str) -> "re.Pattern":
 
 def keyword_matches(keyword: str, lowered_text: str) -> bool:
     """
-    A keyword of the form "a&b" matches when "a" and "b" both appear in the
+    A keyword of the form "a+b" matches when "a" and "b" both appear in the
     text as whole words, with "a" occurring before "b" (not necessarily
-    adjacent). Plain keywords match as a single whole word/phrase.
+    adjacent). A keyword of the form "a&b" matches when "a" and "b" both
+    appear as whole words, in any order. Plain keywords match as a single
+    whole word/phrase.
     """
-    if "&" in keyword:
-        parts = [p.strip().lower() for p in keyword.split("&") if p.strip()]
+    if "+" in keyword:
+        parts = [p.strip().lower() for p in keyword.split("+") if p.strip()]
         if not parts:
             return False
         pos = 0
@@ -98,6 +100,11 @@ def keyword_matches(keyword: str, lowered_text: str) -> bool:
                 return False
             pos = match.end()
         return True
+    if "&" in keyword:
+        parts = [p.strip().lower() for p in keyword.split("&") if p.strip()]
+        if not parts:
+            return False
+        return all(_word_pattern(part).search(lowered_text) for part in parts)
     return _word_pattern(keyword.lower()).search(lowered_text) is not None
 
 
