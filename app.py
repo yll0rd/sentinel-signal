@@ -20,6 +20,7 @@ Notifications:
 
 import os
 import re
+import sys
 import threading
 from datetime import datetime
 
@@ -30,6 +31,12 @@ from telethon import TelegramClient, events
 from telethon.sessions import StringSession
 
 load_dotenv()
+
+# Render (and most PaaS log collectors) capture stdout via a pipe, not a TTY,
+# so Python defaults to block-buffering it. That delays/loses infrequent
+# print()s (e.g. [MATCH]) behind frequent ones (e.g. [DEBUG]) that happen to
+# fill the buffer. Force line buffering so every print() shows up promptly.
+sys.stdout.reconfigure(line_buffering=True)
 
 # ============ CONFIG (from environment) ============
 API_ID = int(os.environ["TELEGRAM_API_ID"])   # from https://my.telegram.org
