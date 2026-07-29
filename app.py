@@ -209,5 +209,21 @@ async def main():
         await client.run_until_disconnected()
 
 
+async def notify_crash(exc: BaseException):
+    await send_notification(
+        title="Sentinel Signal crashed",
+        message=f"The listener stopped unexpectedly and is exiting: {exc}",
+        priority="urgent",
+    )
+
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except Exception as e:
+        print(f"[!] Sentinel Signal crashed: {e}")
+        try:
+            asyncio.run(notify_crash(e))
+        except Exception as notify_error:
+            print(f"[!] Failed to send crash notification: {notify_error}")
+        raise
