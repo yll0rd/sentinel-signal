@@ -17,8 +17,12 @@ real time via Telethon's event system.
    or as `a&b`, which matches when both appear as whole words in any order.
 3. If a message matches a keyword and does **not** match anything in `AVOID_KEYWORDS`, a push
    notification is fired off to a topic on ntfy.sh.
-4. A minimal Flask server runs alongside the listener purely so that hosting platforms (e.g.
-   Render) see an open port and treat the service as healthy — it has no other role.
+4. A minimal Flask server runs alongside the listener so that hosting platforms (e.g. Render) see
+   an open port. Its `/` endpoint doubles as a real liveness check: every incoming message and a
+   periodic internal heartbeat update a "last seen" timestamp, and `/` returns 503 once that
+   timestamp goes stale (see `STALE_THRESHOLD_SECONDS` below) — so an external uptime pinger hitting
+   `/` will actually notice if the Telegram event loop dies or silently disconnects, not just if the
+   process itself crashes.
 
 ## Requirements
 
@@ -75,6 +79,8 @@ real time via Telethon's event system.
    | `NTFY_TOPIC`        | Pick something unique/hard to guess — anyone who knows it can read your notifications |
    | `SESSION_STRING`    | Filled in after step 4 below                                                 |
    | `PORT`              | Port for the keep-alive web server (optional, defaults to `8080`)            |
+   | `HEARTBEAT_INTERVAL_SECONDS` | How often the event loop ticks the heartbeat when idle (optional, defaults to `300`) |
+   | `STALE_THRESHOLD_SECONDS` | How stale the heartbeat can get before `/` reports unhealthy (optional, defaults to `900`) |
 
    Finding a channel's numeric ID: temporarily uncomment the `iter_dialogs()` loop in `app.py`'s
    `main()` function, run `python app.py` once, and read the ID from the printed list of dialogs.
@@ -107,6 +113,12 @@ The app is designed to run as a long-lived background worker (e.g. on [Render](h
 - Point the start command at `python app.py`.
 - Because the app binds a Flask server to `$PORT`, it satisfies host health checks that expect an
   HTTP service, even though the actual work happens via the Telegram event loop.
+- Render's **free** tier is a Web Service, not a Background Worker (which has no free tier), so it
+  spins down after 15 minutes without an HTTP request — and the Telegram listener dies with it.
+  To keep it always-on for free, point an external scheduler (e.g. UptimeRobot, cron-job.org, or a
+  scheduled GitHub Action) at `/` on an interval shorter than 15 minutes. This pinger doubles as
+  your outage alarm: since `/` reports 503 once the heartbeat goes stale (see above), a pinger
+  configured to expect 200 will flag it if the listener ever stops actually running.
 
 ## Notes & gotchas
 

@@ -31,6 +31,10 @@ Configuration is entirely via environment variables (loaded from `.env` via pyth
 - `AVOID_KEYWORDS` — comma-separated, case-insensitive; if any hit, the notification is suppressed
 - `NTFY_TOPIC` — the ntfy.sh topic to publish to (subscribe to the same topic in the ntfy app)
 - `PORT` — optional, defaults to 8080, used only by the keep-alive Flask server
+- `HEARTBEAT_INTERVAL_SECONDS` — optional, defaults to 300; how often the event loop ticks the
+  heartbeat when no messages are arriving
+- `STALE_THRESHOLD_SECONDS` — optional, defaults to 900; how stale the heartbeat can get before
+  the `/` health check reports 503
 
 There are no automated tests, lint config, or CI in this repo.
 
@@ -39,6 +43,12 @@ There are no automated tests, lint config, or CI in this repo.
 - `app.py` runs two things concurrently: the Telethon client event loop (`main()`, via
   `asyncio.run`) and a Flask app (`run_web_server`) started in a daemon thread purely so hosts
   like Render see an open port and don't kill the process.
+- The `/` health check is a real liveness check, not a dumb 200: `last_seen_at` is updated by every
+  incoming message (`handler`) and by a periodic `heartbeat_tick()` background task (so a quiet
+  channel doesn't look like an outage), and `/` returns 503 once `last_seen_at` is older than
+  `STALE_THRESHOLD_SECONDS`. This exists so an external keep-alive pinger (needed to stop Render's
+  free-tier Web Service from spinning down after 15 idle minutes) doubles as an outage alarm — it
+  catches a silent Telethon disconnect, not just a dead process.
 - Before registering the `NewMessage` event handler, the code explicitly calls
   `client.get_entity(CHANNEL)` to force-resolve and cache the channel entity. This is required —
   even with a correct numeric channel ID, Telethon needs to "meet" an entity once per session

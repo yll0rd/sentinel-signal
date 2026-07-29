@@ -18,17 +18,20 @@ Notifications:
 - That's it - no account or API key needed
 """
 
+import asyncio
 import os
 import re
 import sys
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import requests
 from flask import Flask
 from dotenv import load_dotenv
 from telethon import TelegramClient, events
 from telethon.sessions import StringSession
+
+from utils import mins_to_secs_in_str
 
 load_dotenv()
 
@@ -49,9 +52,24 @@ AVOID_KEYWORDS = [kw.strip() for kw in os.environ.get("AVOID_KEYWORDS", "").spli
 
 NTFY_TOPIC = os.environ["NTFY_TOPIC"]   # pick something unique/hard to guess
 NTFY_URL = f"https://ntfy.sh/{NTFY_TOPIC}"
+
+# How often the event loop ticks the heartbeat even with no incoming messages,
+# and how stale the heartbeat can get before the health check reports down.
+HEARTBEAT_INTERVAL_SECONDS = int(os.environ.get("HEARTBEAT_INTERVAL_SECONDS", mins_to_secs_in_str(5)))
+STALE_THRESHOLD_SECONDS = int(os.environ.get("STALE_THRESHOLD_SECONDS", mins_to_secs_in_str(15)))
 # =====================================================
 
 client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
+
+# Updated on every incoming message and on every heartbeat tick, so the
+# health check can distinguish "process is alive" from "the Telegram event
+# loop is actually still running" (e.g. after a silent disconnect).
+last_seen_at = datetime.now()
+
+
+def mark_alive():
+    global last_seen_at
+    last_seen_at = datetime.now()
 
 
 # === Tiny keep-alive web server ===
@@ -59,10 +77,13 @@ app = Flask(__name__)
 
 @app.route("/")
 def health():
+    age = datetime.now() - last_seen_at
+    if age > timedelta(seconds=STALE_THRESHOLD_SECONDS):
+        return f"Sentinel Signal stale: no heartbeat for {age}.", 503
     return "Sentinel Signal is running.", 200
 
 def run_web_server():
-    port = int(os.environ.get("PORT", 8080))
+    port = int(os.environ.get("PORT", "8080"))
     app.run(host="0.0.0.0", port=port)
 
 # ==================================
@@ -116,6 +137,7 @@ def keyword_matches(keyword: str, lowered_text: str) -> bool:
 
 
 async def handler(event):
+    mark_alive()
     text = event.raw_text or ""
     received_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"[DEBUG] {received_at} New message: {text[:50]}{'...' if len(text) > 50 else ''} ")
@@ -139,6 +161,12 @@ async def handler(event):
     )
 
 
+async def heartbeat_tick():
+    while True:
+        await asyncio.sleep(HEARTBEAT_INTERVAL_SECONDS)
+        mark_alive()
+
+
 async def main():
     print("Sentinel Signal starting...")
     
@@ -159,14 +187,14 @@ async def main():
         # print(f"Resolved channel: {entity.title} (id={entity.id})")
  
         client.add_event_handler(handler, events.NewMessage(chats=entity))
- 
+        asyncio.create_task(heartbeat_tick())
+
         print(f"Keywords: {KEYWORDS}")
         print(f"Notifications -> {NTFY_URL}")
         print("Listening...")
- 
+
         await client.run_until_disconnected()
 
 
 if __name__ == "__main__":
-    import asyncio
     asyncio.run(main())
