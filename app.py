@@ -88,21 +88,34 @@ def run_web_server():
 
 # ==================================
 
-def send_notification(title: str, message: str, priority: str = "default"):
-    """Send a push notification via ntfy.sh"""
-    try:
-        requests.post(
-            NTFY_URL,
-            data=message.encode("utf-8"),
-            headers={
-                "Title": title,
-                "Priority": priority,   # min, low, default, high, urgent
-                "Tags": "loudspeaker",
-            },
-            timeout=10,
-        )
-    except requests.RequestException as e:
-        print(f"[!] Failed to send ntfy notification: {e}")
+NTFY_RETRY_BACKOFF_SECONDS = (1, 3, 9)
+
+
+async def send_notification(title: str, message: str, priority: str = "default"):
+    """Send a push notification via ntfy.sh, retrying transient failures with backoff."""
+    attempts = len(NTFY_RETRY_BACKOFF_SECONDS) + 1
+    for attempt in range(attempts):
+        try:
+            response = await asyncio.to_thread(
+                requests.post,
+                NTFY_URL,
+                data=message.encode("utf-8"),
+                headers={
+                    "Title": title,
+                    "Priority": priority,   # min, low, default, high, urgent
+                    "Tags": "loudspeaker",
+                },
+                timeout=10,
+            )
+            response.raise_for_status()
+            return
+        except requests.RequestException as e:
+            if attempt == attempts - 1:
+                print(f"[!] Failed to send ntfy notification after {attempts} attempts: {e}")
+                return
+            delay = NTFY_RETRY_BACKOFF_SECONDS[attempt]
+            print(f"[!] ntfy notification attempt {attempt + 1} failed ({e}), retrying in {delay}s...")
+            await asyncio.sleep(delay)
 
 
 def _word_pattern(word: str) -> "re.Pattern":
@@ -154,7 +167,7 @@ async def handler(event):
     preview = text[:200] + ("..." if len(text) > 200 else "")
     print(f"[MATCH] {matched} -> {preview}")
 
-    send_notification(
+    await send_notification(
         title=f"Keyword match: {', '.join(matched)}",
         message=preview,
         priority="high",
